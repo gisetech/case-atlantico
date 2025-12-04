@@ -185,9 +185,9 @@ def calcular_metricas(df: pd.DataFrame) -> dict:
     return m
 
 # -------------------------------------------------
-# Funções para criar gráficos com Altair
+# Funções para criar gráficos com Altair (ATUALIZADAS)
 # -------------------------------------------------
-def criar_grafico_barras_horizontais(df, x_col, y_col, title, limit=10):
+def criar_grafico_barras_horizontais(df, x_col, y_col, title, limit=10, color="#4CAF50"):
     """Cria gráfico de barras horizontais."""
     if y_col not in df.columns:
         return None
@@ -195,7 +195,7 @@ def criar_grafico_barras_horizontais(df, x_col, y_col, title, limit=10):
     top_data = df[y_col].value_counts().head(limit).reset_index()
     top_data.columns = ['Categoria', 'Quantidade']
     
-    chart = alt.Chart(top_data).mark_bar(color='#4CAF50').encode(
+    chart = alt.Chart(top_data).mark_bar(color=color).encode(
         x=alt.X('Quantidade:Q', title='Quantidade'),
         y=alt.Y('Categoria:N', sort='-x', title='Categoria')
     ).properties(
@@ -205,14 +205,14 @@ def criar_grafico_barras_horizontais(df, x_col, y_col, title, limit=10):
     
     return chart
 
-def criar_grafico_barras(df, x_col, y_col, title):
+def criar_grafico_barras(df, x_col, y_col, title, color="#2196F3"):
     """Cria gráfico de barras verticais."""
     if x_col not in df.columns or y_col not in df.columns:
         return None
     
     chart_data = df.groupby(x_col)[y_col].sum().reset_index()
     
-    chart = alt.Chart(chart_data).mark_bar(color='#2196F3').encode(
+    chart = alt.Chart(chart_data).mark_bar(color=color).encode(
         x=alt.X(f'{x_col}:N', title=x_col, axis=alt.Axis(labelAngle=45)),
         y=alt.Y(f'{y_col}:Q', title=y_col)
     ).properties(
@@ -222,7 +222,7 @@ def criar_grafico_barras(df, x_col, y_col, title):
     
     return chart
 
-def criar_grafico_pizza(df, col, title):
+def criar_grafico_pizza(df, col, title, colors=None):
     """Cria gráfico de pizza/donut."""
     if col not in df.columns:
         return None
@@ -230,9 +230,19 @@ def criar_grafico_pizza(df, col, title):
     chart_data = df[col].value_counts().reset_index()
     chart_data.columns = ['Categoria', 'Quantidade']
     
+    # Usar cores personalizadas se fornecidas
+    if colors and len(colors) >= len(chart_data):
+        color_scale = alt.Scale(
+            domain=chart_data['Categoria'].tolist(),
+            range=colors[:len(chart_data)]
+        )
+    else:
+        # Cores padrão
+        color_scale = alt.Scale(scheme='category10')
+    
     chart = alt.Chart(chart_data).mark_arc(innerRadius=50).encode(
         theta=alt.Theta(field="Quantidade", type="quantitative"),
-        color=alt.Color(field="Categoria", type="nominal"),
+        color=alt.Color(field="Categoria", type="nominal", scale=color_scale),
         tooltip=['Categoria', 'Quantidade']
     ).properties(
         title=title,
@@ -242,7 +252,7 @@ def criar_grafico_pizza(df, col, title):
     
     return chart
 
-def criar_grafico_dispersao(df, x_col, y_col, color_col, title):
+def criar_grafico_dispersao(df, x_col, y_col, color_col, title, color="#FF5722"):
     """Cria gráfico de dispersão."""
     if x_col not in df.columns or y_col not in df.columns:
         return None
@@ -250,7 +260,7 @@ def criar_grafico_dispersao(df, x_col, y_col, color_col, title):
     chart = alt.Chart(df).mark_circle(size=60).encode(
         x=alt.X(f'{x_col}:Q', title=x_col),
         y=alt.Y(f'{y_col}:Q', title=y_col),
-        color=alt.Color(f'{color_col}:N', title=color_col) if color_col in df.columns else alt.value('#FF5722'),
+        color=alt.Color(f'{color_col}:N', title=color_col) if color_col in df.columns else alt.value(color),
         tooltip=[x_col, y_col, color_col] if color_col in df.columns else [x_col, y_col]
     ).properties(
         title=title,
@@ -259,12 +269,12 @@ def criar_grafico_dispersao(df, x_col, y_col, color_col, title):
     
     return chart
 
-def criar_histograma(df, col, title, bins=30):
+def criar_histograma(df, col, title, bins=30, color="#9C27B0"):
     """Cria histograma."""
     if col not in df.columns:
         return None
     
-    chart = alt.Chart(df).mark_bar(color='#9C27B0').encode(
+    chart = alt.Chart(df).mark_bar(color=color).encode(
         alt.X(f'{col}:Q', bin=alt.Bin(maxbins=bins), title=col),
         alt.Y('count()', title='Frequência')
     ).properties(
@@ -298,6 +308,10 @@ filtro_cliente = None
 filtro_tipo = None
 filtro_prioridade = None
 
+# Inicializar cores com valores padrão
+cor_primaria = "#2196F3"
+cor_secundaria = "#4CAF50"
+
 if uploaded_file:
     # Carregar e preparar dados UMA VEZ
     df_raw = load_uploaded_file(uploaded_file)
@@ -324,9 +338,27 @@ if uploaded_file:
             filtro_prioridade = st.selectbox("Prioridade", prioridades)
         
         st.markdown("---")
-        st.header("📊 Configurações Gráficos")
-        cor_primaria = st.color_picker("Cor primária gráficos", "#2196F3")
-        cor_secundaria = st.color_picker("Cor secundária gráficos", "#4CAF50")
+        st.header("🎨 Configurações de Cores")
+        
+        # Cores personalizadas que serão usadas em TODOS os gráficos
+        cor_primaria = st.color_picker("Cor Primária", "#2196F3", 
+                                      help="Cor para gráficos principais")
+        cor_secundaria = st.color_picker("Cor Secundária", "#4CAF50", 
+                                        help="Cor para gráficos secundários")
+        cor_terciaria = st.color_picker("Cor Terciária", "#FF5722", 
+                                       help="Cor para gráficos complementares")
+        
+        # Paleta de cores para gráficos de pizza
+        st.markdown("**Paleta para gráficos de categoria:**")
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            cor_cat1 = st.color_picker("Cat 1", "#4CAF50", key="cat1")
+        with col2:
+            cor_cat2 = st.color_picker("Cat 2", "#2196F3", key="cat2")
+        with col3:
+            cor_cat3 = st.color_picker("Cat 3", "#FF9800", key="cat3")
+        
+        paleta_cores = [cor_cat1, cor_cat2, cor_cat3, "#9C27B0", "#F44336", "#00BCD4"]
         
         st.markdown("---")
         st.header("ℹ️ Sobre")
@@ -393,6 +425,16 @@ st.header("📈 Visão Geral")
 # Mostrar informações dos filtros
 if filtros_ativos:
     st.info(f"**Filtros ativos:** {', '.join([f.split(':')[1].strip() for f in filtros_ativos])}")
+
+# Mostrar paleta de cores ativa
+with st.expander("🎨 Paleta de Cores Ativa", expanded=False):
+    col_cor1, col_cor2, col_cor3 = st.columns(3)
+    with col_cor1:
+        st.color_picker("Primária", cor_primaria, disabled=True)
+    with col_cor2:
+        st.color_picker("Secundária", cor_secundaria, disabled=True)
+    with col_cor3:
+        st.color_picker("Terciária", "#FF5722", disabled=True)
 
 # Primeira linha de métricas
 col1, col2, col3, col4 = st.columns(4)
@@ -477,7 +519,14 @@ with col_graf1:
     # 1. Tarefas reabertas (Pizza)
     if 'Tarefa_Reaberta' in df_filtrado.columns:
         st.subheader("🔄 Tarefas Reabertas")
-        pizza_chart = criar_grafico_pizza(df_filtrado, 'Tarefa_Reaberta', 'Distribuição de Tarefas Reabertas')
+        
+        # Converter booleanos para texto para melhor visualização
+        df_pizza = df_filtrado.copy()
+        df_pizza['Tarefa_Reaberta_Texto'] = df_pizza['Tarefa_Reaberta'].map({True: 'Reabertas', False: 'Não Reabertas'})
+        
+        pizza_chart = criar_grafico_pizza(df_pizza, 'Tarefa_Reaberta_Texto', 
+                                         'Distribuição de Tarefas Reabertas',
+                                         colors=[cor_primaria, cor_secundaria])
         if pizza_chart:
             st.altair_chart(pizza_chart, use_container_width=True)
         
@@ -550,9 +599,25 @@ with col_graf4:
             contagem = len(df_filtrado[df_filtrado['Prioridade'] == filtro_prioridade])
             st.metric("Tarefas com esta prioridade", contagem)
         else:
-            prioridade_chart = criar_grafico_barras(df_filtrado, 'Prioridade', 'count()', 'Quantidade por Prioridade')
-            if prioridade_chart:
-                st.altair_chart(prioridade_chart, use_container_width=True)
+            # Gráfico de barras com cores da paleta
+            prioridade_data = df_filtrado['Prioridade'].value_counts().reset_index()
+            prioridade_data.columns = ['Prioridade', 'Quantidade']
+            
+            if not prioridade_data.empty:
+                chart = alt.Chart(prioridade_data).mark_bar().encode(
+                    x=alt.X('Prioridade:N', title='Prioridade', axis=alt.Axis(labelAngle=0)),
+                    y=alt.Y('Quantidade:Q', title='Quantidade de Tarefas'),
+                    color=alt.Color('Prioridade:N', scale=alt.Scale(
+                        domain=prioridade_data['Prioridade'].tolist(),
+                        range=paleta_cores[:len(prioridade_data)]
+                    )),
+                    tooltip=['Prioridade', 'Quantidade']
+                ).properties(
+                    height=300,
+                    title='Quantidade por Prioridade'
+                )
+                
+                st.altair_chart(chart, use_container_width=True)
         
         # Estatísticas de prioridade
         prioridades = df_filtrado['Prioridade'].value_counts()
@@ -581,10 +646,11 @@ if 'SLA_Status' in df_filtrado.columns:
         sla_data.columns = ['Status', 'Quantidade']
         
         if not sla_data.empty:
-            # Mapa de cores
+            # Mapa de cores usando a paleta
+            cores_sla = [cor_secundaria, "#F44336", "#FF9800"]
             color_scale = alt.Scale(
                 domain=['No prazo', 'Atrasada', 'Sem data'],
-                range=['#4CAF50', '#F44336', '#FF9800']
+                range=cores_sla
             )
             
             chart = alt.Chart(sla_data).mark_arc(innerRadius=50).encode(
@@ -608,7 +674,9 @@ if 'SLA_Status' in df_filtrado.columns:
                 # Filtrar outliers extremos para melhor visualização
                 df_sla_filtered = df_sla[(df_sla['SLA_Dias'] >= -30) & (df_sla['SLA_Dias'] <= 60)]
                 
-                chart = criar_histograma(df_sla_filtered, 'SLA_Dias', 'Distribuição do SLA (entre -30 e 60 dias)', bins=30)
+                chart = criar_histograma(df_sla_filtered, 'SLA_Dias', 
+                                        'Distribuição do SLA (entre -30 e 60 dias)', 
+                                        bins=30, color=cor_primaria)
                 if chart:
                     st.altair_chart(chart, use_container_width=True)
                 
@@ -641,7 +709,7 @@ if 'Eficiencia' in df_filtrado.columns:
             if not eff_data.empty:
                 color_scale = alt.Scale(
                     domain=['Baixa', 'Normal', 'Alta'],
-                    range=['#FF9800', '#4CAF50', '#F44336']
+                    range=[cor_secundaria, cor_primaria, "#FF5722"]
                 )
                 
                 chart = alt.Chart(eff_data).mark_bar().encode(
@@ -658,7 +726,9 @@ if 'Eficiencia' in df_filtrado.columns:
     with col_eff2:
         st.subheader("📈 Distribuição da Eficiência")
         
-        chart = criar_histograma(df_filtrado, 'Eficiencia', 'Distribuição da Eficiência (%)', bins=30)
+        chart = criar_histograma(df_filtrado, 'Eficiencia', 
+                                'Distribuição da Eficiência (%)', 
+                                bins=30, color=cor_primaria)
         if chart:
             st.altair_chart(chart, use_container_width=True)
         
@@ -688,7 +758,7 @@ with col_time1:
             tempo_tipo = tmp.groupby('Tipo_Tarefa')['Dias'].mean().sort_values(ascending=False).head(10).reset_index()
             
             if not tempo_tipo.empty:
-                chart = alt.Chart(tempo_tipo).mark_bar(color='#9C27B0').encode(
+                chart = alt.Chart(tempo_tipo).mark_bar(color="#9C27B0").encode(
                     x=alt.X('Dias:Q', title='Dias Médios'),
                     y=alt.Y('Tipo_Tarefa:N', sort='-x', title='Tipo de Tarefa'),
                     tooltip=['Tipo_Tarefa', 'Dias']
@@ -711,7 +781,7 @@ with col_time2:
             tempo_cliente = tmp.groupby('Cliente')['Dias'].mean().sort_values(ascending=False).head(10).reset_index()
             
             if not tempo_cliente.empty:
-                chart = alt.Chart(tempo_cliente).mark_bar(color='#FF5722').encode(
+                chart = alt.Chart(tempo_cliente).mark_bar(color=cor_secundaria).encode(
                     x=alt.X('Dias:Q', title='Dias Médios'),
                     y=alt.Y('Cliente:N', sort='-x', title='Cliente'),
                     tooltip=['Cliente', 'Dias']
@@ -791,4 +861,5 @@ if st.button("🔄 Limpar Todos os Filtros"):
 st.markdown("---")
 st.caption(f"📅 Última atualização: {datetime.now().strftime('%d/%m/%Y %H:%M')}")
 st.caption(f"📊 Tarefas analisadas: {len(df_filtrado):,} de {len(df_base):,} total")
+st.caption("🎨 Cores ativas: " + f"Primária: {cor_primaria}, Secundária: {cor_secundaria}")
 st.caption("Dashboard de Análise de Tarefas - Baseado na Arquitetura Medalhão")

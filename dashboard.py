@@ -293,29 +293,35 @@ with st.sidebar:
         help="Arquivos CSV ou Excel com dados de tarefas"
     )
     
-    if uploaded_file:
+# Inicializar variáveis de filtro
+filtro_cliente = None
+filtro_tipo = None
+filtro_prioridade = None
+
+if uploaded_file:
+    # Carregar e preparar dados UMA VEZ
+    df_raw = load_uploaded_file(uploaded_file)
+    df_base = preparar_dados(df_raw)
+    df_base = adicionar_colunas_analise(df_base)
+    
+    with st.sidebar:
         st.success("✅ Arquivo carregado com sucesso!")
         
         st.markdown("---")
         st.header("🔍 Filtros")
         
-        df_raw = load_uploaded_file(uploaded_file)
-        df_temp = preparar_dados(df_raw)
-        df_temp = adicionar_colunas_analise(df_temp)
+        # Filtros usando df_base para as opções
+        if 'Cliente' in df_base.columns:
+            clientes = ['Todos'] + sorted(df_base['Cliente'].dropna().unique().tolist())
+            filtro_cliente = st.selectbox("Cliente", clientes)
         
-        # Filtros
-        filtros = {}
-        if 'Cliente' in df_temp.columns:
-            clientes = ['Todos'] + sorted(df_temp['Cliente'].dropna().unique().tolist())
-            filtros['cliente'] = st.selectbox("Cliente", clientes)
+        if 'Tipo_Tarefa' in df_base.columns:
+            tipos = ['Todos'] + sorted(df_base['Tipo_Tarefa'].dropna().unique().tolist())
+            filtro_tipo = st.selectbox("Tipo de Tarefa", tipos)
         
-        if 'Tipo_Tarefa' in df_temp.columns:
-            tipos = ['Todos'] + sorted(df_temp['Tipo_Tarefa'].dropna().unique().tolist())
-            filtros['tipo'] = st.selectbox("Tipo de Tarefa", tipos)
-        
-        if 'Prioridade' in df_temp.columns:
-            prioridades = ['Todos'] + sorted(df_temp['Prioridade'].dropna().unique().tolist())
-            filtros['prioridade'] = st.selectbox("Prioridade", prioridades)
+        if 'Prioridade' in df_base.columns:
+            prioridades = ['Todos'] + sorted(df_base['Prioridade'].dropna().unique().tolist())
+            filtro_prioridade = st.selectbox("Prioridade", prioridades)
         
         st.markdown("---")
         st.header("📊 Configurações Gráficos")
@@ -330,8 +336,41 @@ with st.sidebar:
         - Camada Prata: Dados tratados
         - Camada Ouro: Indicadores e métricas
         """)
-
-if uploaded_file is None:
+    
+    # APLICAR FILTROS ao DataFrame
+    df_filtrado = df_base.copy()
+    
+    if filtro_cliente and filtro_cliente != 'Todos':
+        df_filtrado = df_filtrado[df_filtrado['Cliente'] == filtro_cliente]
+    
+    if filtro_tipo and filtro_tipo != 'Todos':
+        df_filtrado = df_filtrado[df_filtrado['Tipo_Tarefa'] == filtro_tipo]
+    
+    if filtro_prioridade and filtro_prioridade != 'Todos':
+        df_filtrado = df_filtrado[df_filtrado['Prioridade'] == filtro_prioridade]
+    
+    # Calcular métricas com dados FILTRADOS
+    metricas = calcular_metricas(df_filtrado)
+    
+    # Mostrar filtros aplicados
+    st.sidebar.markdown("---")
+    st.sidebar.header("📋 Filtros Aplicados")
+    filtros_ativos = []
+    if filtro_cliente and filtro_cliente != 'Todos':
+        filtros_ativos.append(f"**Cliente:** {filtro_cliente}")
+    if filtro_tipo and filtro_tipo != 'Todos':
+        filtros_ativos.append(f"**Tipo:** {filtro_tipo}")
+    if filtro_prioridade and filtro_prioridade != 'Todos':
+        filtros_ativos.append(f"**Prioridade:** {filtro_prioridade}")
+    
+    if filtros_ativos:
+        for filtro in filtros_ativos:
+            st.sidebar.info(filtro)
+        st.sidebar.metric("Tarefas Filtradas", len(df_filtrado))
+    else:
+        st.sidebar.info("Nenhum filtro aplicado")
+    
+else:
     st.info("👈 Use a barra lateral para enviar um arquivo CSV ou Excel com dados de tarefas para iniciar a análise.")
     
     col1, col2, col3, col4 = st.columns(4)
@@ -347,17 +386,13 @@ if uploaded_file is None:
     st.stop()
 
 # -------------------------------------------------
-# Processamento dos dados
-# -------------------------------------------------
-df_raw = load_uploaded_file(uploaded_file)
-df = preparar_dados(df_raw)
-df = adicionar_colunas_analise(df)
-metricas = calcular_metricas(df)
-
-# -------------------------------------------------
-# Visão geral (métricas)
+# Visão geral (métricas) - AGORA COM DADOS FILTRADOS
 # -------------------------------------------------
 st.header("📈 Visão Geral")
+
+# Mostrar informações dos filtros
+if filtros_ativos:
+    st.info(f"**Filtros ativos:** {', '.join([f.split(':')[1].strip() for f in filtros_ativos])}")
 
 # Primeira linha de métricas
 col1, col2, col3, col4 = st.columns(4)
@@ -440,14 +475,14 @@ col_graf1, col_graf2 = st.columns(2)
 
 with col_graf1:
     # 1. Tarefas reabertas (Pizza)
-    if 'Tarefa_Reaberta' in df.columns:
+    if 'Tarefa_Reaberta' in df_filtrado.columns:
         st.subheader("🔄 Tarefas Reabertas")
-        pizza_chart = criar_grafico_pizza(df, 'Tarefa_Reaberta', 'Distribuição de Tarefas Reabertas')
+        pizza_chart = criar_grafico_pizza(df_filtrado, 'Tarefa_Reaberta', 'Distribuição de Tarefas Reabertas')
         if pizza_chart:
             st.altair_chart(pizza_chart, use_container_width=True)
         
         # Estatísticas
-        reabertas_stats = df['Tarefa_Reaberta'].value_counts()
+        reabertas_stats = df_filtrado['Tarefa_Reaberta'].value_counts()
         col_stat1, col_stat2 = st.columns(2)
         with col_stat1:
             st.info(f"**Não Reabertas:** {reabertas_stats.get(False, 0):,}")
@@ -455,21 +490,31 @@ with col_graf1:
             st.warning(f"**Reabertas:** {reabertas_stats.get(True, 0):,}")
 
 with col_graf2:
-    # 2. Horas por Cliente (Top 10)
-    if {'Cliente', 'Tarefa_Esforco_Registradas'}.issubset(df.columns):
+    # 2. Horas por Cliente (Top 10) - AGORA COM FILTROS
+    if {'Cliente', 'Tarefa_Esforco_Registradas'}.issubset(df_filtrado.columns):
         st.subheader("🏢 Top 10 Clientes por Horas")
         
-        top_clientes = df.groupby('Cliente')['Tarefa_Esforco_Registradas'].sum().nlargest(10).reset_index()
-        
-        chart = alt.Chart(top_clientes).mark_bar(color='#2196F3').encode(
-            x=alt.X('Tarefa_Esforco_Registradas:Q', title='Horas Registradas'),
-            y=alt.Y('Cliente:N', sort='-x', title='Cliente'),
-            tooltip=['Cliente', 'Tarefa_Esforco_Registradas']
-        ).properties(
-            height=400
-        )
-        
-        st.altair_chart(chart, use_container_width=True)
+        # Se já está filtrado por um cliente específico, mostrar apenas ele
+        if filtro_cliente and filtro_cliente != 'Todos':
+            cliente_especifico = df_filtrado[df_filtrado['Cliente'] == filtro_cliente]
+            if not cliente_especifico.empty:
+                horas = cliente_especifico['Tarefa_Esforco_Registradas'].sum()
+                st.info(f"**Cliente selecionado:** {filtro_cliente}")
+                st.metric("Total de Horas", f"{horas:,.1f} h")
+        else:
+            # Mostrar top 10 clientes
+            top_clientes = df_filtrado.groupby('Cliente')['Tarefa_Esforco_Registradas'].sum().nlargest(10).reset_index()
+            
+            if not top_clientes.empty:
+                chart = alt.Chart(top_clientes).mark_bar(color=cor_primaria).encode(
+                    x=alt.X('Tarefa_Esforco_Registradas:Q', title='Horas Registradas'),
+                    y=alt.Y('Cliente:N', sort='-x', title='Cliente'),
+                    tooltip=['Cliente', 'Tarefa_Esforco_Registradas']
+                ).properties(
+                    height=400
+                )
+                
+                st.altair_chart(chart, use_container_width=True)
 
 # -------------------------------------------------
 # Gráficos principais - Segunda linha
@@ -478,32 +523,39 @@ col_graf3, col_graf4 = st.columns(2)
 
 with col_graf3:
     # 3. Horas por Equipe
-    if {'Equipe', 'Tarefa_Esforco_Registradas'}.issubset(df.columns):
+    if {'Equipe', 'Tarefa_Esforco_Registradas'}.issubset(df_filtrado.columns):
         st.subheader("👥 Horas por Equipe")
         
-        horas_equipe = df.groupby('Equipe')['Tarefa_Esforco_Registradas'].sum().reset_index()
+        horas_equipe = df_filtrado.groupby('Equipe')['Tarefa_Esforco_Registradas'].sum().reset_index()
         
-        chart = alt.Chart(horas_equipe).mark_bar(color='#4CAF50').encode(
-            x=alt.X('Equipe:N', title='Equipe', axis=alt.Axis(labelAngle=45)),
-            y=alt.Y('Tarefa_Esforco_Registradas:Q', title='Horas Registradas'),
-            tooltip=['Equipe', 'Tarefa_Esforco_Registradas']
-        ).properties(
-            height=300
-        )
-        
-        st.altair_chart(chart, use_container_width=True)
+        if not horas_equipe.empty:
+            chart = alt.Chart(horas_equipe).mark_bar(color=cor_secundaria).encode(
+                x=alt.X('Equipe:N', title='Equipe', axis=alt.Axis(labelAngle=45)),
+                y=alt.Y('Tarefa_Esforco_Registradas:Q', title='Horas Registradas'),
+                tooltip=['Equipe', 'Tarefa_Esforco_Registradas']
+            ).properties(
+                height=300
+            )
+            
+            st.altair_chart(chart, use_container_width=True)
 
 with col_graf4:
     # 4. Distribuição por Prioridade
-    if 'Prioridade' in df.columns:
+    if 'Prioridade' in df_filtrado.columns:
         st.subheader("🎯 Distribuição por Prioridade")
         
-        prioridade_chart = criar_grafico_barras(df, 'Prioridade', 'count()', 'Quantidade por Prioridade')
-        if prioridade_chart:
-            st.altair_chart(prioridade_chart, use_container_width=True)
+        # Se já está filtrado por uma prioridade específica
+        if filtro_prioridade and filtro_prioridade != 'Todos':
+            st.info(f"**Prioridade selecionada:** {filtro_prioridade}")
+            contagem = len(df_filtrado[df_filtrado['Prioridade'] == filtro_prioridade])
+            st.metric("Tarefas com esta prioridade", contagem)
+        else:
+            prioridade_chart = criar_grafico_barras(df_filtrado, 'Prioridade', 'count()', 'Quantidade por Prioridade')
+            if prioridade_chart:
+                st.altair_chart(prioridade_chart, use_container_width=True)
         
         # Estatísticas de prioridade
-        prioridades = df['Prioridade'].value_counts()
+        prioridades = df_filtrado['Prioridade'].value_counts()
         col_pri1, col_pri2, col_pri3 = st.columns(3)
         with col_pri1:
             st.error(f"**Alta:** {prioridades.get('Alta', 0):,}")
@@ -519,54 +571,56 @@ st.markdown("---")
 # -------------------------------------------------
 st.header("⏱️ Análise de SLA")
 
-if 'SLA_Status' in df.columns:
+if 'SLA_Status' in df_filtrado.columns:
     col_sla1, col_sla2 = st.columns(2)
     
     with col_sla1:
         st.subheader("📊 Status do SLA")
         
-        sla_data = df['SLA_Status'].value_counts().reset_index()
+        sla_data = df_filtrado['SLA_Status'].value_counts().reset_index()
         sla_data.columns = ['Status', 'Quantidade']
         
-        # Mapa de cores
-        color_scale = alt.Scale(
-            domain=['No prazo', 'Atrasada', 'Sem data'],
-            range=['#4CAF50', '#F44336', '#FF9800']
-        )
-        
-        chart = alt.Chart(sla_data).mark_arc(innerRadius=50).encode(
-            theta='Quantidade:Q',
-            color=alt.Color('Status:N', scale=color_scale),
-            tooltip=['Status', 'Quantidade']
-        ).properties(
-            height=300,
-            width=300
-        )
-        
-        st.altair_chart(chart, use_container_width=True)
+        if not sla_data.empty:
+            # Mapa de cores
+            color_scale = alt.Scale(
+                domain=['No prazo', 'Atrasada', 'Sem data'],
+                range=['#4CAF50', '#F44336', '#FF9800']
+            )
+            
+            chart = alt.Chart(sla_data).mark_arc(innerRadius=50).encode(
+                theta='Quantidade:Q',
+                color=alt.Color('Status:N', scale=color_scale),
+                tooltip=['Status', 'Quantidade']
+            ).properties(
+                height=300,
+                width=300
+            )
+            
+            st.altair_chart(chart, use_container_width=True)
     
     with col_sla2:
         st.subheader("📈 Distribuição do SLA (Dias)")
         
-        if 'SLA_Dias' in df.columns:
-            df_sla = df.dropna(subset=['SLA_Dias']).copy()
+        if 'SLA_Dias' in df_filtrado.columns:
+            df_sla = df_filtrado.dropna(subset=['SLA_Dias']).copy()
             
-            # Filtrar outliers extremos para melhor visualização
-            df_sla_filtered = df_sla[(df_sla['SLA_Dias'] >= -30) & (df_sla['SLA_Dias'] <= 60)]
-            
-            chart = criar_histograma(df_sla_filtered, 'SLA_Dias', 'Distribuição do SLA (entre -30 e 60 dias)', bins=30)
-            if chart:
-                st.altair_chart(chart, use_container_width=True)
-            
-            # Estatísticas do SLA
             if not df_sla.empty:
+                # Filtrar outliers extremos para melhor visualização
+                df_sla_filtered = df_sla[(df_sla['SLA_Dias'] >= -30) & (df_sla['SLA_Dias'] <= 60)]
+                
+                chart = criar_histograma(df_sla_filtered, 'SLA_Dias', 'Distribuição do SLA (entre -30 e 60 dias)', bins=30)
+                if chart:
+                    st.altair_chart(chart, use_container_width=True)
+                
+                # Estatísticas do SLA
                 col_stat1, col_stat2, col_stat3 = st.columns(3)
                 with col_stat1:
                     st.metric("Média", f"{df_sla['SLA_Dias'].mean():.1f} dias")
                 with col_stat2:
                     st.metric("Mediana", f"{df_sla['SLA_Dias'].median():.1f} dias")
                 with col_stat3:
-                    st.metric("Atrasadas", f"{len(df_sla[df_sla['SLA_Dias'] > 0]):,}")
+                    atrasadas = len(df_sla[df_sla['SLA_Dias'] > 0])
+                    st.metric("Atrasadas", f"{atrasadas:,}")
 
 # -------------------------------------------------
 # Análise de Eficiência
@@ -574,42 +628,44 @@ if 'SLA_Status' in df.columns:
 st.markdown("---")
 st.header("🎯 Análise de Eficiência")
 
-if 'Eficiencia' in df.columns:
+if 'Eficiencia' in df_filtrado.columns:
     col_eff1, col_eff2 = st.columns(2)
     
     with col_eff1:
         st.subheader("📊 Categorias de Eficiência")
         
-        if 'Eficiencia_Categoria' in df.columns:
-            eff_data = df['Eficiencia_Categoria'].value_counts().reset_index()
+        if 'Eficiencia_Categoria' in df_filtrado.columns:
+            eff_data = df_filtrado['Eficiencia_Categoria'].value_counts().reset_index()
             eff_data.columns = ['Categoria', 'Quantidade']
             
-            color_scale = alt.Scale(
-                domain=['Baixa', 'Normal', 'Alta'],
-                range=['#FF9800', '#4CAF50', '#F44336']
-            )
-            
-            chart = alt.Chart(eff_data).mark_bar().encode(
-                x=alt.X('Categoria:N', title='Categoria'),
-                y=alt.Y('Quantidade:Q', title='Quantidade de Tarefas'),
-                color=alt.Color('Categoria:N', scale=color_scale, legend=None),
-                tooltip=['Categoria', 'Quantidade']
-            ).properties(
-                height=300
-            )
-            
-            st.altair_chart(chart, use_container_width=True)
+            if not eff_data.empty:
+                color_scale = alt.Scale(
+                    domain=['Baixa', 'Normal', 'Alta'],
+                    range=['#FF9800', '#4CAF50', '#F44336']
+                )
+                
+                chart = alt.Chart(eff_data).mark_bar().encode(
+                    x=alt.X('Categoria:N', title='Categoria'),
+                    y=alt.Y('Quantidade:Q', title='Quantidade de Tarefas'),
+                    color=alt.Color('Categoria:N', scale=color_scale, legend=None),
+                    tooltip=['Categoria', 'Quantidade']
+                ).properties(
+                    height=300
+                )
+                
+                st.altair_chart(chart, use_container_width=True)
     
     with col_eff2:
         st.subheader("📈 Distribuição da Eficiência")
         
-        chart = criar_histograma(df, 'Eficiencia', 'Distribuição da Eficiência (%)', bins=30)
+        chart = criar_histograma(df_filtrado, 'Eficiencia', 'Distribuição da Eficiência (%)', bins=30)
         if chart:
             st.altair_chart(chart, use_container_width=True)
         
         # Outliers
-        outliers = df[(df['Eficiencia'] > 100) | (df['Eficiencia'] < 50)]
-        st.warning(f"**Outliers detectados:** {len(outliers):,} tarefas")
+        outliers = df_filtrado[(df_filtrado['Eficiencia'] > 100) | (df_filtrado['Eficiencia'] < 50)]
+        if len(outliers) > 0:
+            st.warning(f"**Outliers detectados:** {len(outliers):,} tarefas")
 
 # -------------------------------------------------
 # Análise de Tempo
@@ -621,43 +677,49 @@ col_time1, col_time2 = st.columns(2)
 
 with col_time1:
     # Tempo por Tipo de Tarefa
-    if {'Tipo_Tarefa', 'Tarefa_Criada', 'Tarefa_Fechada'}.issubset(df.columns):
+    if {'Tipo_Tarefa', 'Tarefa_Criada', 'Tarefa_Fechada'}.issubset(df_filtrado.columns):
         st.subheader("⏱️ Tempo por Tipo de Tarefa")
         
-        tmp = df.dropna(subset=['Tarefa_Criada', 'Tarefa_Fechada']).copy()
-        tmp['Dias'] = (tmp['Tarefa_Fechada'] - tmp['Tarefa_Criada']).dt.days
+        tmp = df_filtrado.dropna(subset=['Tarefa_Criada', 'Tarefa_Fechada']).copy()
         
-        tempo_tipo = tmp.groupby('Tipo_Tarefa')['Dias'].mean().sort_values(ascending=False).head(10).reset_index()
-        
-        chart = alt.Chart(tempo_tipo).mark_bar(color='#9C27B0').encode(
-            x=alt.X('Dias:Q', title='Dias Médios'),
-            y=alt.Y('Tipo_Tarefa:N', sort='-x', title='Tipo de Tarefa'),
-            tooltip=['Tipo_Tarefa', 'Dias']
-        ).properties(
-            height=400
-        )
-        
-        st.altair_chart(chart, use_container_width=True)
+        if not tmp.empty:
+            tmp['Dias'] = (tmp['Tarefa_Fechada'] - tmp['Tarefa_Criada']).dt.days
+            
+            tempo_tipo = tmp.groupby('Tipo_Tarefa')['Dias'].mean().sort_values(ascending=False).head(10).reset_index()
+            
+            if not tempo_tipo.empty:
+                chart = alt.Chart(tempo_tipo).mark_bar(color='#9C27B0').encode(
+                    x=alt.X('Dias:Q', title='Dias Médios'),
+                    y=alt.Y('Tipo_Tarefa:N', sort='-x', title='Tipo de Tarefa'),
+                    tooltip=['Tipo_Tarefa', 'Dias']
+                ).properties(
+                    height=400
+                )
+                
+                st.altair_chart(chart, use_container_width=True)
 
 with col_time2:
     # Tempo por Cliente
-    if {'Cliente', 'Tarefa_Criada', 'Tarefa_Fechada'}.issubset(df.columns):
+    if {'Cliente', 'Tarefa_Criada', 'Tarefa_Fechada'}.issubset(df_filtrado.columns):
         st.subheader("🏢 Tempo por Cliente")
         
-        tmp = df.dropna(subset=['Tarefa_Criada', 'Tarefa_Fechada']).copy()
-        tmp['Dias'] = (tmp['Tarefa_Fechada'] - tmp['Tarefa_Criada']).dt.days
+        tmp = df_filtrado.dropna(subset=['Tarefa_Criada', 'Tarefa_Fechada']).copy()
         
-        tempo_cliente = tmp.groupby('Cliente')['Dias'].mean().sort_values(ascending=False).head(10).reset_index()
-        
-        chart = alt.Chart(tempo_cliente).mark_bar(color='#FF5722').encode(
-            x=alt.X('Dias:Q', title='Dias Médios'),
-            y=alt.Y('Cliente:N', sort='-x', title='Cliente'),
-            tooltip=['Cliente', 'Dias']
-        ).properties(
-            height=400
-        )
-        
-        st.altair_chart(chart, use_container_width=True)
+        if not tmp.empty:
+            tmp['Dias'] = (tmp['Tarefa_Fechada'] - tmp['Tarefa_Criada']).dt.days
+            
+            tempo_cliente = tmp.groupby('Cliente')['Dias'].mean().sort_values(ascending=False).head(10).reset_index()
+            
+            if not tempo_cliente.empty:
+                chart = alt.Chart(tempo_cliente).mark_bar(color='#FF5722').encode(
+                    x=alt.X('Dias:Q', title='Dias Médios'),
+                    y=alt.Y('Cliente:N', sort='-x', title='Cliente'),
+                    tooltip=['Cliente', 'Dias']
+                ).properties(
+                    height=400
+                )
+                
+                st.altair_chart(chart, use_container_width=True)
 
 # -------------------------------------------------
 # Tabela de dados
@@ -671,8 +733,8 @@ with st.expander("🔍 Ver dados completos", expanded=False):
     with col_filt1:
         mostrar_colunas = st.multiselect(
             "Selecione colunas para exibir",
-            options=df.columns.tolist(),
-            default=df.columns.tolist()[:8]
+            options=df_filtrado.columns.tolist(),
+            default=df_filtrado.columns.tolist()[:8]
         )
     
     with col_filt2:
@@ -680,7 +742,7 @@ with st.expander("🔍 Ver dados completos", expanded=False):
     
     # Exibir tabela
     st.dataframe(
-        df[mostrar_colunas] if mostrar_colunas else df.head(linhas_mostrar),
+        df_filtrado[mostrar_colunas] if mostrar_colunas else df_filtrado.head(linhas_mostrar),
         use_container_width=True,
         height=400
     )
@@ -695,28 +757,38 @@ col_res1, col_res2, col_res3 = st.columns(3)
 
 with col_res1:
     st.subheader("📈 Estatísticas Numéricas")
-    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+    numeric_cols = df_filtrado.select_dtypes(include=[np.number]).columns.tolist()
     if numeric_cols:
-        st.dataframe(df[numeric_cols].describe(), use_container_width=True)
+        st.dataframe(df_filtrado[numeric_cols].describe(), use_container_width=True)
 
 with col_res2:
     st.subheader("📋 Contagem por Categoria")
-    categorical_cols = df.select_dtypes(include=['object', 'bool']).columns.tolist()[:3]
+    categorical_cols = df_filtrado.select_dtypes(include=['object', 'bool']).columns.tolist()[:3]
     for col in categorical_cols:
-        st.write(f"**{col}:**")
-        st.write(df[col].value_counts().head(5))
+        if col in df_filtrado.columns:
+            st.write(f"**{col}:**")
+            st.write(df_filtrado[col].value_counts().head(5))
 
 with col_res3:
     st.subheader("📅 Estatísticas de Datas")
-    date_cols = df.select_dtypes(include=['datetime64']).columns.tolist()
+    date_cols = df_filtrado.select_dtypes(include=['datetime64']).columns.tolist()
     for col in date_cols[:2]:
-        st.write(f"**{col}:**")
-        st.write(f"Início: {df[col].min().date()}")
-        st.write(f"Fim: {df[col].max().date()}")
+        if col in df_filtrado.columns and not df_filtrado[col].isna().all():
+            st.write(f"**{col}:**")
+            st.write(f"Início: {df_filtrado[col].min().date()}")
+            st.write(f"Fim: {df_filtrado[col].max().date()}")
+
+# -------------------------------------------------
+# Botão para limpar filtros
+# -------------------------------------------------
+st.markdown("---")
+if st.button("🔄 Limpar Todos os Filtros"):
+    st.rerun()
 
 # -------------------------------------------------
 # Rodapé
 # -------------------------------------------------
 st.markdown("---")
 st.caption(f"📅 Última atualização: {datetime.now().strftime('%d/%m/%Y %H:%M')}")
-st.caption("📊 Dashboard de Análise de Tarefas - Baseado na Arquitetura Medalhão")
+st.caption(f"📊 Tarefas analisadas: {len(df_filtrado):,} de {len(df_base):,} total")
+st.caption("Dashboard de Análise de Tarefas - Baseado na Arquitetura Medalhão")
